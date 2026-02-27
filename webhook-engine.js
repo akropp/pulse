@@ -3,6 +3,46 @@
 const Mustache = require('mustache');
 const { getDb } = require('./db');
 
+function renderJsonTemplateValue(value, context) {
+  if (typeof value === 'string') {
+    return Mustache.render(value, context);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(item => renderJsonTemplateValue(item, context));
+  }
+
+  if (value && typeof value === 'object') {
+    const renderedObject = {};
+    for (const [key, nestedValue] of Object.entries(value)) {
+      renderedObject[key] = renderJsonTemplateValue(nestedValue, context);
+    }
+    return renderedObject;
+  }
+
+  return value;
+}
+
+function renderBodyTemplate(bodyTemplate, context) {
+  if (!bodyTemplate) {
+    return { bodyStr: null, isJson: false };
+  }
+
+  try {
+    const parsedTemplate = JSON.parse(bodyTemplate);
+    const rendered = renderJsonTemplateValue(parsedTemplate, context);
+    return { bodyStr: JSON.stringify(rendered), isJson: true };
+  } catch (_) {
+    const bodyStr = Mustache.render(bodyTemplate, context);
+    try {
+      JSON.parse(bodyStr);
+      return { bodyStr, isJson: true };
+    } catch (_) {
+      return { bodyStr, isJson: false };
+    }
+  }
+}
+
 /**
  * Fire all matching webhooks for a project event.
  * @param {string} projectId
@@ -55,18 +95,7 @@ async function fireHooks(projectId, eventType, updateData) {
       }
     }
 
-    let bodyStr = null;
-    let isJson = false;
-    if (sub.body_template) {
-      try {
-        bodyStr = Mustache.render(sub.body_template, context);
-        // Try to parse as JSON to send properly typed
-        JSON.parse(bodyStr);
-        isJson = true;
-      } catch (_) {
-        isJson = false;
-      }
-    }
+    const { bodyStr, isJson } = renderBodyTemplate(sub.body_template, context);
 
     const method = (sub.method || 'POST').toUpperCase();
     const fetchHeaders = {
@@ -100,4 +129,4 @@ async function fireHooks(projectId, eventType, updateData) {
   }
 }
 
-module.exports = { fireHooks };
+module.exports = { fireHooks, renderBodyTemplate };
