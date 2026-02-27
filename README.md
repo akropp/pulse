@@ -1,6 +1,6 @@
-# Pulse
+# Swarmboard
 
-Pulse is a standalone project status tracker with webhook notifications. It provides:
+Swarmboard is a standalone project status tracker with webhook notifications. It provides:
 
 - A local HTTP API for projects, members, status updates, and hook subscriptions
 - A built-in web UI at `/`
@@ -17,7 +17,7 @@ Pulse is a standalone project status tracker with webhook notifications. It prov
 - Per-project hook subscriptions with event filters
 - Mustache body templates for outbound webhook payloads
 - Hook execution logs and manual hook testing
-- OpenClaw bootstrap command (`pulse hooks add-openclaw`)
+- OpenClaw bootstrap command (`swarmboard hooks add-openclaw`)
 
 ## Quick Start
 
@@ -49,9 +49,9 @@ pulse status
 | Variable | Used by | Purpose | Default |
 | --- | --- | --- | --- |
 | `PORT` | server | HTTP listen port | `18800` |
-| `PULSE_URL` | CLI | Base URL for `pulse` CLI requests (use `--url` for explicit override) | `http://localhost:18800` |
-| `PULSE_API_KEY` | docs/reserved | Intended API key for deployments that add auth middleware; current server does not enforce it | unset |
-| `PULSE_DATA_DIR` | docs/reserved | Intended override for data directory; current code stores DB in `./data/pulse.db` | `./data` (implicit) |
+| `SWARMBOARD_URL` | CLI | Base URL for `pulse` CLI requests (use `--url` for explicit override) | `http://localhost:18800` |
+| `SWARMBOARD_API_KEY` | docs/reserved | Intended API key for deployments that add auth middleware; current server does not enforce it | unset |
+| `SWARMBOARD_DATA_DIR` | docs/reserved | Intended override for data directory; current code stores DB in `./data/swarmboard.db` | `./data` (implicit) |
 
 ## API Endpoints
 
@@ -100,60 +100,60 @@ pulse --url http://localhost:18800 <command>
 
 Global options:
 
-- `--url <url>`: override server URL (same as `PULSE_URL`)
+- `--url <url>`: override server URL (same as `SWARMBOARD_URL`)
 - `--json`: print raw JSON output
 
 ### Project Commands
 
-- `pulse list|ls [--archived] [--json]`
-- `pulse create <name> [description] [--id <id>] [--json]`
-- `pulse get <id> [--json]`
-- `pulse update <id> [text...] [--author <author>] [--json]`
-- `pulse history <id> [--limit <n>] [--json]`
+- `swarmboard list|ls [--archived] [--json]`
+- `swarmboard create <name> [description] [--id <id>] [--json]`
+- `swarmboard get <id> [--json]`
+- `swarmboard update <id> [text...] [--author <author>] [--json]`
+- `swarmboard history <id> [--limit <n>] [--json]`
 - `pulse edit <id> [--name <name>] [--description <desc>] [--json]`
-- `pulse archive <id>`
+- `swarmboard archive <id>`
 - `pulse status [--json]`
 
 Examples:
 
 ```bash
-pulse create "SDK Migration" "Move API client to v2"
-pulse update sdk-migration-abc12 "Rate limiting fixes are merged" --author clawd
-pulse history sdk-migration-abc12 --limit 10
+swarmboard create "SDK Migration" "Move API client to v2"
+swarmboard update sdk-migration-abc12 "Rate limiting fixes are merged" --author clawd
+swarmboard history sdk-migration-abc12 --limit 10
 ```
 
 ### Member Commands
 
-- `pulse members add <project-id> <name> [--role owner|contributor|watcher]`
-- `pulse members remove <project-id> <name>`
-- `pulse members list|ls <project-id> [--json]`
+- `swarmboard members add <project-id> <name> [--role owner|contributor|watcher]`
+- `swarmboard members remove <project-id> <name>`
+- `swarmboard members list|ls <project-id> [--json]`
 
 Example:
 
 ```bash
-pulse members add sdk-migration-abc12 alice --role owner
+swarmboard members add sdk-migration-abc12 alice --role owner
 ```
 
 ### Hook Commands
 
-- `pulse hooks list|ls [--json]`
-- `pulse hooks create <id> <name> <url> [--method <method>] [--headers <json>] [--template <text>] [--template-file <file>] [--json]`
-- `pulse hooks get <id> [--json]`
-- `pulse hooks update <id> [--name <name>] [--url <url>] [--method <method>] [--headers <json>] [--template <text>] [--template-file <file>] [--enable|--disable] [--json]`
-- `pulse hooks delete|rm <id>`
-- `pulse hooks test <id> [--project <id>] [--author <author>] [--text <text>] [--json]`
-- `pulse hooks log <id> [--limit <n>] [--json]`
-- `pulse hooks subscribe <project-id> <hook-id> [--events status,member,archive,edit]`
-- `pulse hooks unsubscribe <project-id> <hook-id>`
-- `pulse hooks subscriptions <project-id> [--json]`
+- `swarmboard hooks list|ls [--json]`
+- `swarmboard hooks create <id> <name> <url> [--method <method>] [--headers <json>] [--template <text>] [--template-file <file>] [--json]`
+- `swarmboard hooks get <id> [--json]`
+- `swarmboard hooks update <id> [--name <name>] [--url <url>] [--method <method>] [--headers <json>] [--template <text>] [--template-file <file>] [--enable|--disable] [--json]`
+- `swarmboard hooks delete|rm <id>`
+- `swarmboard hooks test <id> [--project <id>] [--author <author>] [--text <text>] [--json]`
+- `swarmboard hooks log <id> [--limit <n>] [--json]`
+- `swarmboard hooks subscribe <project-id> <hook-id> [--events status,member,archive,edit]`
+- `swarmboard hooks unsubscribe <project-id> <hook-id>`
+- `swarmboard hooks subscriptions <project-id> [--json]`
 
 Examples:
 
 ```bash
-pulse hooks create notify-slack "Slack #eng" "https://hooks.slack.com/services/XXX/YYY/ZZZ" \
+swarmboard hooks create notify-slack "Slack #eng" "https://hooks.slack.com/services/XXX/YYY/ZZZ" \
   --template '{"text":"[{{event.type}}] {{project.name}}: {{update.text}}"}'
 
-pulse hooks subscribe sdk-migration-abc12 notify-slack --events status,archive
+swarmboard hooks subscribe sdk-migration-abc12 notify-slack --events status,archive
 ```
 
 ## Webhook Hooks
@@ -168,7 +168,7 @@ Pulse separates webhook setup into:
 Create a reusable hook definition:
 
 ```bash
-pulse hooks create notify-team "Team Relay" "http://localhost:18789/hooks/pulse" \
+swarmboard hooks create notify-team "Team Relay" "http://localhost:18789/hooks/pulse" \
   --headers '{"Authorization":"Bearer <token>"}' \
   --template-file ./templates/pulse-openclaw.json
 ```
@@ -178,13 +178,13 @@ pulse hooks create notify-team "Team Relay" "http://localhost:18789/hooks/pulse"
 Subscribe for all events:
 
 ```bash
-pulse hooks subscribe sdk-migration-abc12 notify-team
+swarmboard hooks subscribe sdk-migration-abc12 notify-team
 ```
 
 Subscribe for specific events only:
 
 ```bash
-pulse hooks subscribe sdk-migration-abc12 notify-team --events status,archive
+swarmboard hooks subscribe sdk-migration-abc12 notify-team --events status,archive
 ```
 
 ### Event Types
@@ -226,7 +226,7 @@ If rendered template is valid JSON, Pulse sends `Content-Type: application/json`
 Use `add-openclaw` to create/update a Pulse hook that targets OpenClaw and optionally patch `openclaw.json` mappings:
 
 ```bash
-pulse hooks add-openclaw \
+swarmboard hooks add-openclaw \
   --name "Discord via Gilfoyle" \
   --agent gilfoyle \
   --channel discord \

@@ -1,5 +1,5 @@
 {
-  "name": "pulse",
+  "name": "swarmboard",
   "version": "1.0.0",
   "description": "Standalone project status tracker server",
   "main": "server.js",

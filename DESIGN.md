@@ -1,4 +1,4 @@
-# Pulse — Project Status Tracker
+# Swarmboard — Project Status Tracker
 
 ## Overview
 
@@ -192,7 +192,7 @@ Pulse controls the routing, OpenClaw just executes delivery.
 - OpenClaw is one possible hook target, not a dependency
 - Slack, Discord webhooks, PagerDuty, email APIs — all work the same way
 - Per-project, per-event-type granularity
-- `pulse hooks add-openclaw` makes OpenClaw setup a one-liner
+- `swarmboard hooks add-openclaw` makes OpenClaw setup a one-liner
 - Publishable: anyone can use Pulse without OpenClaw
 
 ## Agent Skill
@@ -200,10 +200,10 @@ Pulse controls the routing, OpenClaw just executes delivery.
 Thin wrapper around `curl` calls to Pulse API. All agents share it.
 
 Key commands:
-- `pulse create <name> <description>`
-- `pulse update <project> <status text>`
-- `pulse list`
-- `pulse history <project>`
+- `swarmboard create <name> <description>`
+- `swarmboard update <project> <status text>`
+- `swarmboard list`
+- `swarmboard history <project>`
 
 Skill handles notification delivery after posting updates (reads response, calls message tool).
 
@@ -227,7 +227,7 @@ Skill handles notification delivery after posting updates (reads response, calls
 
 - Exact port number
 - Auth for the API (API key? or trust local network only?)
-- Name: **Pulse** ✅ (Adam approved)
+- Name: **Swarmboard** ✅ (Adam approved)
 - Should web UI manual updates trigger notifications? (deferred)
 - Cron polling for un-notified updates? (deferred)
 

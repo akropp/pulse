@@ -453,7 +453,7 @@ app.post('/hooks/:id/test', async (req, res) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
-  console.log(`Pulse running on http://localhost:${PORT}`);
+  console.log(`Swarmboard running on http://localhost:${PORT}`);
   console.log(`Data: ${require('./db').DB_PATH}`);
 });
 

@@ -4,8 +4,8 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const DATA_DIR = process.env.PULSE_DATA_DIR || path.join(__dirname, 'data');
-const DB_PATH = path.join(DATA_DIR, 'pulse.db');
+const DATA_DIR = process.env.SWARMBOARD_DATA_DIR || path.join(__dirname, 'data');
+const DB_PATH = path.join(DATA_DIR, 'swarmboard.db');
 
 let db;
 

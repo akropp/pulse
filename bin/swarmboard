@@ -8,7 +8,7 @@ const fs = require('fs');
 const DEFAULT_URL = 'http://localhost:18800';
 
 function getBaseUrl() {
-  return process.env.PULSE_URL || DEFAULT_URL;
+  return process.env.SWARMBOARD_URL || DEFAULT_URL;
 }
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ async function api(method, endpoint, body) {
   try {
     res = await fetch(`${baseUrl}${endpoint}`, opts);
   } catch (err) {
-    die(`Cannot reach Pulse at ${baseUrl}: ${err.message}`);
+    die(`Cannot reach Swarmboard at ${baseUrl}: ${err.message}`);
   }
 
   const text = await res.text();
@@ -65,7 +65,7 @@ function truncate(s, n = 80) {
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
 program
-  .name('pulse')
+  .name('swarmboard')
   .description('Pulse — project status tracker CLI')
   .version('1.0.0')
   .option('--json', 'Output raw JSON')
@@ -74,7 +74,7 @@ program
 program.hook('preAction', (thisCommand) => {
   const root = thisCommand.parent || thisCommand;
   const opts = root.opts ? root.opts() : {};
-  if (opts.url) process.env.PULSE_URL = opts.url;
+  if (opts.url) process.env.SWARMBOARD_URL = opts.url;
 });
 
 // list
@@ -368,7 +368,7 @@ hooks
     }
   });
 
-// pulse hooks subscribe <project-id> <hook-id>
+// swarmboard hooks subscribe <project-id> <hook-id>
 hooks
   .command('subscribe <project-id> <hook-id>')
   .description('Subscribe a project to a hook')
@@ -382,7 +382,7 @@ hooks
     console.log(`Subscribed ${projectId} → ${hookId}${filter}`);
   });
 
-// pulse hooks unsubscribe <project-id> <hook-id>
+// swarmboard hooks unsubscribe <project-id> <hook-id>
 hooks
   .command('unsubscribe <project-id> <hook-id>')
   .description('Unsubscribe a project from a hook')
@@ -391,7 +391,7 @@ hooks
     console.log(`Unsubscribed ${projectId} from ${hookId}`);
   });
 
-// pulse hooks subscriptions <project-id>
+// swarmboard hooks subscriptions <project-id>
 hooks
   .command('subscriptions <project-id>')
   .description('List hook subscriptions for a project')
@@ -482,9 +482,9 @@ hooks
         if (!cfg.hooks) cfg.hooks = {};
         if (!cfg.hooks.mappings) cfg.hooks.mappings = [];
 
-        const PULSE_MATCH = { path: 'pulse' };
+        const PULSE_MATCH = { path: 'swarmboard' };
         const existing = cfg.hooks.mappings.find(
-          m => m.match?.path === 'pulse'
+          m => m.match?.path === 'swarmboard'
         );
 
         if (!existing) {
@@ -515,7 +515,7 @@ hooks
       console.log(`Note: ${configPath} not found — skipping openclaw.json update`);
       console.log('Add this mapping to your openclaw.json hooks.mappings manually:');
       console.log(JSON.stringify({
-        match: { path: 'pulse' },
+        match: { path: 'swarmboard' },
         action: 'agent',
         wakeMode: 'now',
         name: 'Pulse Notification',
