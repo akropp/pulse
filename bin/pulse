@@ -1,0 +1,549 @@
+#!/usr/bin/env node
+'use strict';
+
+const { program } = require('commander');
+const path = require('path');
+const fs = require('fs');
+
+const DEFAULT_URL = 'http://localhost:18800';
+
+function getBaseUrl() {
+  return process.env.PULSE_URL || DEFAULT_URL;
+}
+
+// ─── HTTP helpers ─────────────────────────────────────────────────────────────
+
+async function api(method, endpoint, body) {
+  const baseUrl = getBaseUrl();
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+  };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+
+  let res;
+  try {
+    res = await fetch(`${baseUrl}${endpoint}`, opts);
+  } catch (err) {
+    die(`Cannot reach Pulse at ${baseUrl}: ${err.message}`);
+  }
+
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch (_) { data = text; }
+
+  if (!res.ok) {
+    const msg = typeof data === 'object' ? (data.error || JSON.stringify(data)) : text;
+    die(`HTTP ${res.status}: ${msg}`);
+  }
+  return data;
+}
+
+function die(msg) {
+  console.error('Error:', msg);
+  process.exit(1);
+}
+
+function print(data) {
+  if (typeof data === 'string') {
+    console.log(data);
+  } else {
+    console.log(JSON.stringify(data, null, 2));
+  }
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  return new Date(d).toLocaleString();
+}
+
+function truncate(s, n = 80) {
+  if (!s) return '';
+  return s.length > n ? s.slice(0, n - 1) + '…' : s;
+}
+
+// ─── Projects ─────────────────────────────────────────────────────────────────
+
+program
+  .name('pulse')
+  .description('Pulse — project status tracker CLI')
+  .version('1.0.0')
+  .option('--json', 'Output raw JSON')
+  .option('--url <url>', 'Pulse server URL', DEFAULT_URL);
+
+program.hook('preAction', (thisCommand) => {
+  const root = thisCommand.parent || thisCommand;
+  const opts = root.opts ? root.opts() : {};
+  if (opts.url) process.env.PULSE_URL = opts.url;
+});
+
+// list
+program
+  .command('list')
+  .alias('ls')
+  .description('List all projects')
+  .option('--archived', 'Include archived projects')
+  .option('--json', 'Raw JSON output')
+  .action(async (opts) => {
+    const q = opts.archived ? '?archived=true' : '';
+    const projects = await api('GET', `/projects${q}`);
+    if (opts.json || program.opts().json) return print(projects);
+
+    if (!projects.length) {
+      console.log('No projects.');
+      return;
+    }
+    console.log(`${'ID'.padEnd(28)} ${'NAME'.padEnd(24)} ${'LATEST STATUS'.padEnd(50)} UPDATED`);
+    console.log('─'.repeat(120));
+    for (const p of projects) {
+      const archived = p.archived ? ' [archived]' : '';
+      const status = truncate(p.latest_status || '—', 50);
+      const updated = p.latest_at ? fmtDate(p.latest_at) : fmtDate(p.created_at);
+      console.log(
+        `${(p.id + archived).padEnd(28)} ${p.name.padEnd(24)} ${status.padEnd(50)} ${updated}`
+      );
+    }
+  });
+
+// create
+program
+  .command('create <name> [description]')
+  .description('Create a new project')
+  .option('--id <id>', 'Custom project ID (slug)')
+  .option('--json', 'Raw JSON output')
+  .action(async (name, description, opts) => {
+    const project = await api('POST', '/projects', { name, description, id: opts.id });
+    if (opts.json || program.opts().json) return print(project);
+    console.log(`Created project: ${project.id}`);
+    console.log(`  Name: ${project.name}`);
+    if (project.description) console.log(`  Desc: ${project.description}`);
+  });
+
+// get
+program
+  .command('get <id>')
+  .description('Get project details')
+  .option('--json', 'Raw JSON output')
+  .action(async (id, opts) => {
+    const project = await api('GET', `/projects/${id}`);
+    if (opts.json || program.opts().json) return print(project);
+    console.log(`${project.name} (${project.id})`);
+    if (project.description) console.log(`  ${project.description}`);
+    if (project.archived) console.log('  [ARCHIVED]');
+    if (project.members?.length) {
+      console.log(`  Members: ${project.members.map(m => `${m.member_name} (${m.role})`).join(', ')}`);
+    }
+    if (project.latest_status) {
+      console.log(`  Latest: "${project.latest_status.status_text}"`);
+      console.log(`    by ${project.latest_status.author} at ${fmtDate(project.latest_status.created_at)}`);
+    } else {
+      console.log('  No status updates yet.');
+    }
+  });
+
+// update (post status)
+program
+  .command('update <id> [text...]')
+  .description('Post a status update')
+  .option('--author <author>', 'Author name (default: $USER)')
+  .option('--json', 'Raw JSON output')
+  .action(async (id, textParts, opts) => {
+    const text = textParts.join(' ');
+    if (!text) die('Status text is required');
+    const author = opts.author || process.env.USER || 'unknown';
+    const update = await api('POST', `/projects/${id}/status`, { author, text });
+    if (opts.json || program.opts().json) return print(update);
+    console.log(`[${fmtDate(update.created_at)}] ${author}: ${text}`);
+  });
+
+// history
+program
+  .command('history <id>')
+  .description('Show status history for a project')
+  .option('--limit <n>', 'Max entries', '20')
+  .option('--json', 'Raw JSON output')
+  .action(async (id, opts) => {
+    const history = await api('GET', `/projects/${id}/history?limit=${opts.limit}`);
+    if (opts.json || program.opts().json) return print(history);
+    if (!history.length) {
+      console.log('No history.');
+      return;
+    }
+    for (const u of history) {
+      console.log(`[${fmtDate(u.created_at)}] ${u.author}:`);
+      console.log(`  ${u.status_text}`);
+    }
+  });
+
+// archive
+program
+  .command('archive <id>')
+  .description('Archive a project')
+  .action(async (id) => {
+    await api('DELETE', `/projects/${id}`);
+    console.log(`Archived: ${id}`);
+  });
+
+// edit
+program
+  .command('edit <id>')
+  .description('Edit project metadata')
+  .option('--name <name>', 'New name')
+  .option('--description <desc>', 'New description')
+  .option('--json', 'Raw JSON output')
+  .action(async (id, opts) => {
+    const body = {};
+    if (opts.name)        body.name = opts.name;
+    if (opts.description) body.description = opts.description;
+    const project = await api('PUT', `/projects/${id}`, body);
+    if (opts.json || program.opts().json) return print(project);
+    console.log(`Updated: ${project.id} — ${project.name}`);
+  });
+
+// ─── Members ──────────────────────────────────────────────────────────────────
+
+const members = program.command('members').description('Manage project members');
+
+members
+  .command('add <project-id> <name>')
+  .description('Add a member to a project')
+  .option('--role <role>', 'Role: owner|contributor|watcher', 'contributor')
+  .action(async (projectId, name, opts) => {
+    const m = await api('POST', `/projects/${projectId}/members`, { name, role: opts.role });
+    console.log(`Added ${m.member_name} (${m.role}) to ${m.project_id}`);
+  });
+
+members
+  .command('remove <project-id> <name>')
+  .description('Remove a member from a project')
+  .action(async (projectId, name) => {
+    await api('DELETE', `/projects/${projectId}/members/${encodeURIComponent(name)}`);
+    console.log(`Removed ${name} from ${projectId}`);
+  });
+
+members
+  .command('list <project-id>')
+  .alias('ls')
+  .description('List members of a project')
+  .option('--json', 'Raw JSON output')
+  .action(async (projectId, opts) => {
+    const mems = await api('GET', `/projects/${projectId}/members`);
+    if (opts.json) return print(mems);
+    for (const m of mems) console.log(`  ${m.member_name.padEnd(24)} ${m.role}`);
+  });
+
+// ─── Hooks ────────────────────────────────────────────────────────────────────
+
+const hooks = program.command('hooks').description('Manage webhook hooks');
+
+hooks
+  .command('list')
+  .alias('ls')
+  .description('List all hooks')
+  .option('--json', 'Raw JSON output')
+  .action(async (opts) => {
+    const list = await api('GET', '/hooks');
+    if (opts.json) return print(list);
+    if (!list.length) { console.log('No hooks defined.'); return; }
+    console.log(`${'ID'.padEnd(30)} ${'NAME'.padEnd(28)} ${'URL'.padEnd(45)} ENABLED`);
+    console.log('─'.repeat(110));
+    for (const h of list) {
+      console.log(
+        `${h.id.padEnd(30)} ${h.name.padEnd(28)} ${truncate(h.url, 45).padEnd(45)} ${h.enabled ? 'yes' : 'no'}`
+      );
+    }
+  });
+
+hooks
+  .command('create <id> <name> <url>')
+  .description('Create a webhook hook')
+  .option('--method <method>', 'HTTP method', 'POST')
+  .option('--headers <json>', 'Headers as JSON string')
+  .option('--template <template>', 'Body template (Mustache/JSON string)')
+  .option('--template-file <file>', 'Load body template from file')
+  .option('--json', 'Raw JSON output')
+  .action(async (id, name, url, opts) => {
+    let headers;
+    if (opts.headers) {
+      try { headers = JSON.parse(opts.headers); } catch (_) { die('--headers must be valid JSON'); }
+    }
+    let body_template = opts.template || null;
+    if (opts.templateFile) {
+      body_template = fs.readFileSync(path.resolve(opts.templateFile), 'utf8').trim();
+    }
+    const hook = await api('POST', '/hooks', { id, name, url, method: opts.method, headers, body_template });
+    if (opts.json) return print(hook);
+    console.log(`Created hook: ${hook.id}`);
+  });
+
+hooks
+  .command('get <id>')
+  .description('Get hook details')
+  .option('--json', 'Raw JSON output')
+  .action(async (id, opts) => {
+    const hook = await api('GET', `/hooks/${id}`);
+    if (opts.json) return print(hook);
+    console.log(`${hook.id} — ${hook.name}`);
+    console.log(`  URL:     ${hook.url}`);
+    console.log(`  Method:  ${hook.method}`);
+    console.log(`  Enabled: ${hook.enabled ? 'yes' : 'no'}`);
+    if (hook.headers_json) console.log(`  Headers: ${hook.headers_json}`);
+    if (hook.body_template) console.log(`  Template:\n${hook.body_template}`);
+  });
+
+hooks
+  .command('update <id>')
+  .description('Update a hook')
+  .option('--name <name>', 'New name')
+  .option('--url <url>', 'New URL')
+  .option('--method <method>', 'HTTP method')
+  .option('--headers <json>', 'Headers as JSON')
+  .option('--template <template>', 'Body template')
+  .option('--template-file <file>', 'Load body template from file')
+  .option('--enable', 'Enable hook')
+  .option('--disable', 'Disable hook')
+  .option('--json', 'Raw JSON output')
+  .action(async (id, opts) => {
+    const body = {};
+    if (opts.name)    body.name = opts.name;
+    if (opts.url)     body.url = opts.url;
+    if (opts.method)  body.method = opts.method;
+    if (opts.headers) {
+      try { body.headers = JSON.parse(opts.headers); } catch (_) { die('--headers must be valid JSON'); }
+    }
+    if (opts.template)     body.body_template = opts.template;
+    if (opts.templateFile) body.body_template = fs.readFileSync(path.resolve(opts.templateFile), 'utf8').trim();
+    if (opts.enable)  body.enabled = true;
+    if (opts.disable) body.enabled = false;
+    const hook = await api('PUT', `/hooks/${id}`, body);
+    if (opts.json) return print(hook);
+    console.log(`Updated hook: ${hook.id}`);
+  });
+
+hooks
+  .command('delete <id>')
+  .alias('rm')
+  .description('Delete a hook')
+  .action(async (id) => {
+    await api('DELETE', `/hooks/${id}`);
+    console.log(`Deleted hook: ${id}`);
+  });
+
+hooks
+  .command('test <id>')
+  .description('Fire a hook with test data')
+  .option('--project <id>', 'Project ID to use as context')
+  .option('--author <author>', 'Author for test update', 'test-user')
+  .option('--text <text>', 'Status text for test update', 'Test notification from Pulse')
+  .option('--json', 'Raw JSON output')
+  .action(async (id, opts) => {
+    const q = opts.project ? `?project=${opts.project}` : '';
+    const result = await api('POST', `/hooks/${id}/test${q}`, {
+      author: opts.author,
+      text: opts.text,
+      project_id: opts.project
+    });
+    if (opts.json) return print(result);
+    if (result.success) {
+      console.log(`Hook fired OK — HTTP ${result.status}`);
+      if (result.body) console.log(`Response: ${truncate(result.body, 200)}`);
+    } else {
+      console.log(`Hook failed: ${result.error}`);
+    }
+  });
+
+hooks
+  .command('log <id>')
+  .description('Show recent hook execution log')
+  .option('--limit <n>', 'Max entries', '20')
+  .option('--json', 'Raw JSON output')
+  .action(async (id, opts) => {
+    const log = await api('GET', `/hooks/${id}/log?limit=${opts.limit}`);
+    if (opts.json) return print(log);
+    if (!log.length) { console.log('No log entries.'); return; }
+    for (const e of log) {
+      const status = e.error ? `ERROR: ${e.error}` : `HTTP ${e.status_code}`;
+      console.log(`[${fmtDate(e.created_at)}] ${e.event_type} → ${status}`);
+      if (e.response_body) console.log(`  ${truncate(e.response_body, 120)}`);
+    }
+  });
+
+// pulse hooks subscribe <project-id> <hook-id>
+hooks
+  .command('subscribe <project-id> <hook-id>')
+  .description('Subscribe a project to a hook')
+  .option('--events <filter>', 'Comma-separated event types: status,member,archive,edit')
+  .action(async (projectId, hookId, opts) => {
+    await api('POST', `/projects/${projectId}/notifications`, {
+      hook_id: hookId,
+      event_filter: opts.events || null
+    });
+    const filter = opts.events ? ` (events: ${opts.events})` : '';
+    console.log(`Subscribed ${projectId} → ${hookId}${filter}`);
+  });
+
+// pulse hooks unsubscribe <project-id> <hook-id>
+hooks
+  .command('unsubscribe <project-id> <hook-id>')
+  .description('Unsubscribe a project from a hook')
+  .action(async (projectId, hookId) => {
+    await api('DELETE', `/projects/${projectId}/notifications/${hookId}`);
+    console.log(`Unsubscribed ${projectId} from ${hookId}`);
+  });
+
+// pulse hooks subscriptions <project-id>
+hooks
+  .command('subscriptions <project-id>')
+  .description('List hook subscriptions for a project')
+  .option('--json', 'Raw JSON output')
+  .action(async (projectId, opts) => {
+    const subs = await api('GET', `/projects/${projectId}/notifications`);
+    if (opts.json) return print(subs);
+    if (!subs.length) { console.log('No subscriptions.'); return; }
+    for (const s of subs) {
+      const filter = s.event_filter ? ` [${s.event_filter}]` : ' [all events]';
+      const enabled = s.enabled ? '' : ' (disabled)';
+      console.log(`  ${s.hook_id.padEnd(30)} ${s.hook_name}${filter}${enabled}`);
+    }
+  });
+
+// ─── OpenClaw integration ─────────────────────────────────────────────────────
+
+hooks
+  .command('add-openclaw')
+  .description('Create a Pulse hook that routes through OpenClaw')
+  .requiredOption('--name <name>', 'Hook display name')
+  .requiredOption('--agent <agentId>', 'OpenClaw agent ID (e.g. clawd, gilfoyle)')
+  .requiredOption('--channel <channel>', 'Delivery channel (telegram, discord, etc.)')
+  .requiredOption('--target <target>', 'Target ID (chat ID, channel ID, etc.)')
+  .option('--model <model>', 'Model for the OpenClaw agent', 'openai-codex/gpt-4.1-mini')
+  .option('--openclaw-config <path>', 'Path to openclaw.json', `${process.env.HOME}/.openclaw/openclaw.json`)
+  .option('--openclaw-port <port>', 'OpenClaw gateway port (auto-detected from config)')
+  .option('--token <token>', 'Bearer token for OpenClaw hooks (auto-detected from config)')
+  .option('--json', 'Raw JSON output')
+  .action(async (opts) => {
+    // 1. Read openclaw.json if available
+    let openclawPort = opts.openclawPort ? parseInt(opts.openclawPort) : 18789;
+    let token = opts.token || '';
+
+    const configPath = path.resolve(opts.openclawConfig);
+    if (fs.existsSync(configPath)) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        if (cfg.hooks?.token) token = cfg.hooks.token;
+        if (cfg.server?.port) openclawPort = cfg.server.port;
+        if (cfg.gateway?.port) openclawPort = cfg.gateway.port;
+      } catch (e) {
+        console.warn(`Warning: could not parse ${configPath}: ${e.message}`);
+      }
+    }
+
+    // 2. Build the hook
+    const hookId = `notify-${opts.channel}-${opts.agent}`;
+    const hookUrl = `http://localhost:${openclawPort}/hooks/pulse`;
+    const bodyTemplate = JSON.stringify({
+      agentId: opts.agent,
+      channel: opts.channel,
+      accountId: opts.agent,
+      target: opts.target,
+      project: '{{project.name}}',
+      author: '{{update.author}}',
+      text: '{{update.text}}'
+    }, null, 2);
+
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    // 3. Create/update the hook in Pulse
+    try {
+      await api('POST', '/hooks', {
+        id: hookId,
+        name: opts.name,
+        url: hookUrl,
+        method: 'POST',
+        headers,
+        body_template: bodyTemplate
+      });
+    } catch (_) {
+      // If it already exists, update it
+      await api('PUT', `/hooks/${hookId}`, {
+        name: opts.name,
+        url: hookUrl,
+        headers,
+        body_template: bodyTemplate
+      });
+    }
+    console.log(`Created/updated Pulse hook: ${hookId}`);
+    console.log(`  → ${hookUrl}`);
+
+    // 4. Add the openclaw.json mapping (if config exists)
+    if (fs.existsSync(configPath)) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        if (!cfg.hooks) cfg.hooks = {};
+        if (!cfg.hooks.mappings) cfg.hooks.mappings = [];
+
+        const PULSE_MATCH = { path: 'pulse' };
+        const existing = cfg.hooks.mappings.find(
+          m => m.match?.path === 'pulse'
+        );
+
+        if (!existing) {
+          cfg.hooks.mappings.push({
+            match: PULSE_MATCH,
+            action: 'agent',
+            wakeMode: 'now',
+            name: 'Pulse Notification',
+            agentId: '{{payload.agentId}}',
+            sessionKey: 'hook:pulse-notify',
+            messageTemplate:
+              'Deliver this project status notification using the message tool.\n\n' +
+              'Project: {{payload.project}}\nAuthor: {{payload.author}}\nUpdate: {{payload.text}}\n\n' +
+              'Send to channel={{payload.channel}}, accountId={{payload.accountId}}, target={{payload.target}}.\n' +
+              'After sending, reply NO_REPLY.',
+            deliver: false,
+            model: opts.model
+          });
+          fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2) + '\n');
+          console.log(`Added Pulse mapping to ${configPath}`);
+        } else {
+          console.log(`Pulse mapping already present in ${configPath}`);
+        }
+      } catch (e) {
+        console.warn(`Warning: could not update ${configPath}: ${e.message}`);
+      }
+    } else {
+      console.log(`Note: ${configPath} not found — skipping openclaw.json update`);
+      console.log('Add this mapping to your openclaw.json hooks.mappings manually:');
+      console.log(JSON.stringify({
+        match: { path: 'pulse' },
+        action: 'agent',
+        wakeMode: 'now',
+        name: 'Pulse Notification',
+        agentId: '{{payload.agentId}}',
+        sessionKey: 'hook:pulse-notify',
+        messageTemplate:
+          'Deliver this project status notification using the message tool.\n\n' +
+          'Project: {{payload.project}}\nAuthor: {{payload.author}}\nUpdate: {{payload.text}}\n\n' +
+          'Send to channel={{payload.channel}}, accountId={{payload.accountId}}, target={{payload.target}}.\n' +
+          'After sending, reply NO_REPLY.',
+        deliver: false,
+        model: opts.model
+      }, null, 2));
+    }
+  });
+
+// ─── Server management ────────────────────────────────────────────────────────
+
+program
+  .command('status')
+  .description('Check server health')
+  .option('--json', 'Raw JSON output')
+  .action(async (opts) => {
+    const health = await api('GET', '/health');
+    if (opts.json) return print(health);
+    console.log(`Pulse server at ${getBaseUrl()} — ${health.status} (${health.timestamp})`);
+  });
+
+// ─── Run ──────────────────────────────────────────────────────────────────────
+
+program.parse();
