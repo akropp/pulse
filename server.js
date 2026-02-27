@@ -7,9 +7,24 @@ const { fireHooks } = require('./webhook-engine');
 
 const app = express();
 const PORT = process.env.PORT || 18800;
+const PULSE_API_KEY = process.env.PULSE_API_KEY;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+function requireApiKey(req, res, next) {
+  if (!PULSE_API_KEY) return next();
+  if (!['POST', 'PUT', 'DELETE'].includes(req.method)) return next();
+
+  const authHeader = req.get('authorization');
+  if (authHeader !== `Bearer ${PULSE_API_KEY}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  return next();
+}
+
+app.use(requireApiKey);
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
