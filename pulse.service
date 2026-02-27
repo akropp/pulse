@@ -1,0 +1,16 @@
+[Unit]
+Description=Pulse — Project Status Tracker
+After=network.target
+
+[Service]
+Type=simple
+User=clawd
+WorkingDirectory=/home/clawd/projects/pulse
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=18800
+
+[Install]
+WantedBy=multi-user.target
